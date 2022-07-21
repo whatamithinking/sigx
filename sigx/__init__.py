@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -36,7 +36,7 @@ class Message:
 	"""The current value being sent for the signal."""
 	previous_value: Any = None
 	"""Optional previous value for this topic and publisher."""
-	created: datetime.datetime = field(default_factory=datetime.datetime.now)
+	created: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
 	"""Datetime when the message was created."""
 	message_id: str = field(default_factory=lambda: uuid.uuid1().hex)
 	"""A uuid for the message."""
