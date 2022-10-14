@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -644,3 +644,22 @@ class SignalExchange:
 			except:
 				log.exception('Exception raised by signal handler.',
 					extra=dict(subscription_id=subscription_id))
+
+	async def async_publish(self, *args, **kwargs) -> None:
+		"""Async publish a message to all subscriptions for the given topic and publisher.
+		
+		Subscription handler uniqueness will be checked before sending any messages
+		to avoid sending the same handler function the same message more than once.
+
+		Args:
+			publisher: The publisher object publishing the message.
+			message: The SignalModel object being published. Note that the 
+				previous_value will be filled in automatically.
+			skip_no_change: Optional. True if you want to skip publishing
+				when the previous value and current value are the same.
+				Defaults to True.
+			cache: Optional. True if you want the latest value to be cached
+				for this topic and False otherwise. Defaults to True.
+				Note that the cache holds hard refs, which will prevent gc.
+		"""
+		return await asyncio.to_thread(self.publish, *args, **kwargs)
