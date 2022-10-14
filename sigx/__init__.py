@@ -7,6 +7,8 @@ import threading
 import weakref
 import logging
 import datetime
+import asyncio
+import inspect
 from collections import namedtuple
 
 import refutil
@@ -146,6 +148,13 @@ class _TopicPatterns:
 		return iter(self._topic_patterns.values())
 
 
+def _run_sync(func, *args, **kwargs):
+	if inspect.iscoroutinefunction(func):
+		return asyncio.get_event_loop().run_until_complete(func(*args, **kwargs))
+	else:
+		return func(*args, **kwargs)
+
+
 _Subscription = namedtuple('_Subscription', 
 	['topic_pattern', 'subscription_id', 'handler', 'filter', 'publisher_name'])
 _SubscriptionWeakRef = refutil.reftype('_SubscriptionWeakRef', ['subscription_id'])
@@ -190,18 +199,18 @@ class _Subscriptions:
 		
 		Args:
 			topic_pattern: A regular expression string or enum to match topics against.
-			handler: Callable to call with new messages for the subscription, which
+			handler: Async/sync callable to call with new messages for the subscription, which
 				takes subscription id, publisher, and the message as arguments.
 			publisher_name: Optional. The name of the publisher to receive messages
 				from. Defaults to "any" which listens for messages from any publisher.
-			filter: Callable to call with new messages for the subscription, which
+			filter: Async/sync callable to call with new messages for the subscription, which
 				takes subscription id, publisher, and the message as arguments.
 				If it returns True, the message will be given to the handler callable;
 				otherwise, the message will be dropped.
 			subscription_id: Optional. UUID for the subscription. Defaults to uuid1 hex.
-			weak_handler: Optioanl. True if a weakref to the handler callable should
+			weak_handler: Optional. True if a weakref to the handler callable should
 				be used and False otherwise. Defaults to True.
-			weak_filter: Optioanl. True if a weakref to the filter callable should
+			weak_filter: Optional. True if a weakref to the filter callable should
 				be used and False otherwise. Defaults to True.
 			initialize: Optional. True if the initial latest values for all matching
 				topics and publishers should be sent to the subscription when it is created,
@@ -261,13 +270,13 @@ class _Subscriptions:
 					for pub, previous_message in previous_messages:
 						if filter:
 							try:
-								if not filter(subscription_id, pub, previous_message):
+								if not _run_sync(filter, subscription_id, pub, previous_message):
 									continue
 							except:
 								log.exception('Exception raised by signal filter.')
 								continue
 						try:
-							handler(subscription_id, pub, previous_message)
+							_run_sync(handler, subscription_id, pub, previous_message)
 						except:
 							log.exception('Exception raised by signal handler.')
 
@@ -528,18 +537,18 @@ class SignalExchange:
 		
 		Args:
 			topic_pattern: A regular expression string or enum to match topics against.
-			handler: Callable to call with new messages for the subscription, which
+			handler: Async/sync callable to call with new messages for the subscription, which
 				takes subscription id, publisher, and the message as arguments.
 			publisher_name: Optional. The name of the publisher to receive messages
 				from. Defaults to "any" which listens for messages from any publisher.
-			filter: Callable to call with new messages for the subscription, which
+			filter: Async/sync callable to call with new messages for the subscription, which
 				takes subscription id, publisher, and the message as arguments.
 				If it returns True, the message will be given to the handler callable;
 				otherwise, the message will be dropped.
 			subscription_id: Optional. UUID for the subscription. Defaults to uuid1 hex.
-			weak_handler: Optioanl. True if a weakref to the handler callable should
+			weak_handler: Optional. True if a weakref to the handler callable should
 				be used and False otherwise. Defaults to True.
-			weak_filter: Optioanl. True if a weakref to the filter callable should
+			weak_filter: Optional. True if a weakref to the filter callable should
 				be used and False otherwise. Defaults to True.
 			initialize: Optional. True if the initial latest values for all matching
 				topics and publishers should be sent to the subscription when it is created,
@@ -617,7 +626,7 @@ class SignalExchange:
 				if isinstance(subscription.filter, weakref.ref):
 					filter = subscription.filter()
 				try:
-					if not filter(subscription_id, publisher, message):
+					if not _run_sync(filter, subscription_id, publisher, message):
 						continue
 				except:
 					log.exception('Exception raised by signal filter.',
@@ -631,7 +640,7 @@ class SignalExchange:
 		
 		for handler, subscription_id in handlers.items():
 			try:
-				handler(subscription_id, publisher, message)
+				_run_sync(handler, subscription_id, publisher, message)
 			except:
 				log.exception('Exception raised by signal handler.',
 					extra=dict(subscription_id=subscription_id))

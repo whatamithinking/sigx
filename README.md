@@ -9,6 +9,8 @@ This package solves the topic-pattern issue with an efficient/performant topic-p
 
 This package also solves the late joiner problem by way of a built-in cache which can optionally be used each time a signal/message/event is published. When new subscriptions are created, the subscriber has the option to `initialize` itself with cached values for that topic.
 
+Async and sync handlers & filters are supported.
+
 Documentation consists of what you see here and the docs in the code.
 
 ## Table of Contents
