@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-__version__ = '2.1.0'
+__version__ = '2.1.1'
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -202,11 +202,15 @@ class _TopicPatterns:
 		return iter(self._topic_patterns.values())
 
 
-def _run_sync(loop, func, *args, **kwargs):
-	if inspect.iscoroutinefunction(func):
-		return asyncio.run_coroutine_threadsafe(func(*args, **kwargs), loop)
+def _call_handler(loop: Optional[asyncio.AbstractEventLoop], func, *args, **kwargs) -> None:
+	if loop is not None:
+		if inspect.iscoroutinefunction(func):
+			asyncio.run_coroutine_threadsafe(func(*args, **kwargs), loop)
+		# handle callback meant to be called only in async code, which must be threadsafe
+		else:
+			loop.call_soon_threadsafe(func, *args, **kwargs)
 	else:
-		return func(*args, **kwargs)
+		func(*args, **kwargs)
 
 
 _Subscription = namedtuple('_Subscription', 
@@ -286,6 +290,13 @@ class _Subscriptions:
 				sub_handler = _SubscriptionWeakRef(handler, callback=self._weak_subscription_cleanup, 
 					subscription_id=subscription_id)
 			
+			# disallow filter from being a coroutine primarily over performance concerns
+			# filters are meant to be fast to avoid passing messages to handlers which are more expensive
+			# calling coroutines when filtering will probably slow things down because we have to wait
+			# for an event loop instead of just running in the current thread
+			if inspect.inspect.iscoroutinefunction(filter):
+				raise ValueError('filter cannot be a coroutine.')
+
 			sub_filter = filter
 			if filter and weak_filter:
 				sub_filter = _SubscriptionWeakRef(filter, callback=self._weak_subscription_cleanup, 
@@ -326,13 +337,13 @@ class _Subscriptions:
 					for pub, previous_message in previous_messages:
 						if filter:
 							try:
-								if not _run_sync(loop, filter, subscription_id, pub, previous_message):
+								if not filter(subscription_id, pub, previous_message):
 									continue
 							except:
 								log.exception('Exception raised by signal filter.')
 								continue
 						try:
-							_run_sync(loop, handler, subscription_id, pub, previous_message)
+							_call_handler(loop, handler, subscription_id, pub, previous_message)
 						except:
 							log.exception('Exception raised by signal handler.')
 
@@ -682,7 +693,7 @@ class SignalExchange:
 				if isinstance(subscription.filter, weakref.ref):
 					filter = subscription.filter()
 				try:
-					if not _run_sync(subscription.loop, filter, subscription_id, publisher, message):
+					if not filter(subscription_id, publisher, message):
 						continue
 				except:
 					log.exception('Exception raised by signal filter.',
@@ -696,7 +707,7 @@ class SignalExchange:
 		
 		for handler, (subscription_id, loop) in handlers.items():
 			try:
-				_run_sync(loop, handler, subscription_id, publisher, message)
+				_call_handler(loop, handler, subscription_id, publisher, message)
 			except:
 				log.exception('Exception raised by signal handler.',
 					extra=dict(subscription_id=subscription_id))
