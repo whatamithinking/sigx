@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-__version__ = '2.1.1'
+__version__ = '2.1.2'
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -274,6 +274,8 @@ class _Subscriptions:
 			initialize: Optional. True if the initial latest values for all matching
 				topics and publishers should be sent to the subscription when it is created,
 				handling the late-joiner problem. Defaults to False.
+			loop: Optional. asyncio event loop to be used if the handler must be called
+				using a loop. Do not include if handler is threadsafe. Defaults to None.
 		
 		Returns:
 			subscription_id: uuid hex of the subscription.
@@ -620,7 +622,9 @@ class SignalExchange:
 			initialize: Optional. True if the initial latest values for all matching
 				topics and publishers should be sent to the subscription when it is created,
 				handling the late-joiner problem. Defaults to False.
-		
+			loop: Optional. asyncio event loop to be used if the handler must be called
+				using a loop. Do not include if handler is threadsafe. Defaults to None.
+
 		Returns:
 			subscription_id: uuid hex of the subscription.
 		"""
@@ -752,7 +756,9 @@ class SignalExchange:
 			initialize: Optional. True if the initial latest values for all matching
 				topics and publishers should be sent to the subscription when it is created,
 				handling the late-joiner problem. Defaults to False.
-		
+			loop: Optional. asyncio event loop to be used if the handler must be called
+				using a loop. Do not include if handler is threadsafe. Defaults to None.
+
 		Returns:
 			subscription_id: uuid hex of the subscription.
 		"""
