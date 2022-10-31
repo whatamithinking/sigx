@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import functools
 from typing import *
 import re
 import uuid
@@ -201,15 +202,15 @@ class _TopicPatterns:
 		return iter(self._topic_patterns.values())
 
 
-def _run_sync(func, *args, **kwargs):
+def _run_sync(loop, func, *args, **kwargs):
 	if inspect.iscoroutinefunction(func):
-		return asyncio.get_event_loop().run_until_complete(func(*args, **kwargs))
+		return asyncio.run_coroutine_threadsafe(func(*args, **kwargs), loop)
 	else:
 		return func(*args, **kwargs)
 
 
 _Subscription = namedtuple('_Subscription', 
-	['topic_pattern', 'subscription_id', 'handler', 'filter', 'publisher_name'])
+	['topic_pattern', 'subscription_id', 'handler', 'filter', 'publisher_name', 'loop'])
 _SubscriptionWeakRef = refutil.reftype('_SubscriptionWeakRef', ['subscription_id'])
 
 
@@ -247,7 +248,8 @@ class _Subscriptions:
 	def _add(self, topic_pattern: Union[str, Enum], handler: Callable[[str, Any, Message], None], 
 		publisher_name: str = 'any', filter: Optional[Callable[[str, Any, Message], bool]] = None, 
 		subscription_id: Optional[str] = None,
-		weak_handler: bool = True, weak_filter: bool = True, initialize: bool = False) -> str:
+		weak_handler: bool = True, weak_filter: bool = True, initialize: bool = False,
+		loop: Optional[asyncio.BaseEventLoop] = None) -> str:
 		"""Create a subscription and return the subscription id.
 		
 		Args:
@@ -298,6 +300,7 @@ class _Subscriptions:
 					handler=sub_handler,
 					filter=sub_filter,
 					publisher_name=publisher_name,
+					loop=loop,
 				)
 			self._subscriptions[subscription_id] = subscription
 
@@ -323,13 +326,13 @@ class _Subscriptions:
 					for pub, previous_message in previous_messages:
 						if filter:
 							try:
-								if not _run_sync(filter, subscription_id, pub, previous_message):
+								if not _run_sync(loop, filter, subscription_id, pub, previous_message):
 									continue
 							except:
 								log.exception('Exception raised by signal filter.')
 								continue
 						try:
-							_run_sync(handler, subscription_id, pub, previous_message)
+							_run_sync(loop, handler, subscription_id, pub, previous_message)
 						except:
 							log.exception('Exception raised by signal handler.')
 
@@ -679,7 +682,7 @@ class SignalExchange:
 				if isinstance(subscription.filter, weakref.ref):
 					filter = subscription.filter()
 				try:
-					if not _run_sync(filter, subscription_id, publisher, message):
+					if not _run_sync(subscription.loop, filter, subscription_id, publisher, message):
 						continue
 				except:
 					log.exception('Exception raised by signal filter.',
@@ -689,11 +692,11 @@ class SignalExchange:
 				handler = subscription.handler()
 			else:
 				handler = subscription.handler
-			handlers[handler] = subscription_id
+			handlers[handler] = (subscription_id, subscription.loop)
 		
-		for handler, subscription_id in handlers.items():
+		for handler, (subscription_id, loop) in handlers.items():
 			try:
-				_run_sync(handler, subscription_id, publisher, message)
+				_run_sync(loop, handler, subscription_id, publisher, message)
 			except:
 				log.exception('Exception raised by signal handler.',
 					extra=dict(subscription_id=subscription_id))
