@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-__version__ = '2.0.0'
+__version__ = '2.1.0'
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -719,3 +719,38 @@ class SignalExchange:
 				Note that the cache holds hard refs, which will prevent gc.
 		"""
 		return await asyncio.to_thread(self.publish, *args, **kwargs)
+
+	async def async_subscribe(self, *args, **kwargs) -> str:
+		"""Async create a subscription and return the subscription id.
+		
+		Args:
+			topic_pattern: A regular expression string or enum to match topics against.
+			handler: Async/sync callable to call with new messages for the subscription, which
+				takes subscription id, publisher, and the message as arguments.
+			publisher_name: Optional. The name of the publisher to receive messages
+				from. Defaults to "any" which listens for messages from any publisher.
+			filter: Async/sync callable to call with new messages for the subscription, which
+				takes subscription id, publisher, and the message as arguments.
+				If it returns True, the message will be given to the handler callable;
+				otherwise, the message will be dropped.
+			subscription_id: Optional. UUID for the subscription. Defaults to uuid1 hex.
+			weak_handler: Optional. True if a weakref to the handler callable should
+				be used and False otherwise. Defaults to True.
+			weak_filter: Optional. True if a weakref to the filter callable should
+				be used and False otherwise. Defaults to True.
+			initialize: Optional. True if the initial latest values for all matching
+				topics and publishers should be sent to the subscription when it is created,
+				handling the late-joiner problem. Defaults to False.
+		
+		Returns:
+			subscription_id: uuid hex of the subscription.
+		"""
+		return await asyncio.to_thread(self._subscriptions._add, *args, **kwargs)
+
+	async def async_unsubscribe(self, *args, **kwargs) -> None:
+		"""Async remove a subscription.
+		
+		Args:
+			subscription_id: The uuid of the subscription to remove.
+		"""
+		return await asyncio.to_thread(self._subscriptions._remove, *args, **kwargs)
