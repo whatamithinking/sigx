@@ -1,15 +1,11 @@
 # sigx
-Topic-pattern signal exchange with in-memory caching for late joiners
+Async in-memory topic-pattern signal exchange
 
 ## Preamble
 
-[blinker](https://github.com/pallets-eco/blinker) is the old pro when it comes to signal exchange in a python program, but it does not have topic-pattern subscriptions or do anything about late joiners itself.
+[blinker](https://github.com/pallets-eco/blinker) is the old pro when it comes to signal exchange in a python program, but it does not have topic-pattern subscriptions.
 
 This package solves the topic-pattern issue with an efficient/performant topic-pattern subscription interface with indexing for performance so that topic patterns are compared to each topic only once.
-
-This package also solves the late joiner problem by way of a built-in cache which can optionally be used each time a signal/message/event is published. When new subscriptions are created, the subscriber has the option to `initialize` itself with cached values for that topic.
-
-Async and sync handlers & filters are supported.
 
 Documentation consists of what you see here and the docs in the code.
 
@@ -42,6 +38,7 @@ import time
 from typing import *
 import logging
 
+import anyio
 from sigx import SignalExchange, Message
 
 
@@ -55,50 +52,54 @@ def handler(sub_id: str, source: Any, msg: Message):
 	print(time.time(), 'callback', sub_id, source, msg)
 
 
-sx = SignalExchange()
+async def async_handler(sub_id: str, source: Any, msg: Message):
+	# sub id is the subscription id the message is getting sent for
+	# this can be useful if one callback handles messages for multiple subscriptions
+	# source is the publisher object sending the signal/message
+	await anyio.sleep(0.1)
+	print(time.time(), 'callback', sub_id, source, msg)
 
-sx.publish(
-		publisher=None, 
-		message=Message(
-				publisher_name=None, 
-				topic='parent/child',
-				value='my message',
-			),
-		skip_no_change=True,
-		cache=True,
-	)
 
-# example of late joiner
-# the handler can subscribe late and still receive the most recent message
-# because the publisher used the cache
-sx.subscribe(
-		topic_pattern=r'parent/.*',
-		handler=handler,
-		initialize=True,
-	)
+async def main():
+	sx = SignalExchange()
 
-# subscriber does not receive message because the cache is being used
-# and skip no change is True and the value is not changing from the last one
-# for the topic
-sx.publish(
-		publisher=None, 
-		message=Message(
-				publisher_name=None, 
-				topic='parent/child',
-				value='my message',
-			),
-		skip_no_change=True,
-		cache=True,
-	)
+	sx.subscribe(
+			topic_pattern=r'parent/.*',
+			handler=handler,
+		)
+	sx.subscribe(
+			topic_pattern=r'parent/child.*',
+			handler=async_handler,
+		)
+	await sx.publish(
+			publisher=None, 
+			message=Message(
+					publisher_name=None, 
+					topic='parent/child',
+					value='my message',
+				),
+		)
+	await sx.publish(
+			publisher=None, 
+			message=Message(
+					publisher_name=None, 
+					topic='parent/chipmunk',
+					value='my message',
+					previous_value='banana',
+				),
+		)
+
+
+anyio.run(main)
+
 ```
 
 ### Output
 
-A warning is shown because the publisher cannot be weakly referenced and the cache is being used, so the publisher will be kept alive until the SignalExchange reference is lost.
-
-In most cases, the publisher is an object which can be weakly referenced so the data in the cache will be garbage collected soon after the object is.
-
 ```text
-WARNING:sigx:The publisher cannot be weakly referenced. A hard ref will be held by the cache indefinitely.
-1654608794.8128855 callback 62132bc6e66611eca2b7b88a60aec5d0 None Message(publisher_name=None, topic='parent/child', value='my message', previous_value=None, created=datetime.datetime(2022, 6, 7, 9, 33, 14, 807888), message_id='62128f29e66611ec8fd0b88a60aec5d0')
+1667237629.7093604 callback 2e31f3a6594211ed8f48b88a60aec5d0 None Message(publisher_name=None, topic='parent/child', value='my message', previous_value=None, created=datetime.datetime(2022, 10, 31, 17, 33, 49, 609258, tzinfo=datetime.timezone.utc), message_id='0000172337ca6d062cd82792ba09504c')
+
+1667237629.7102206 callback 2e31cc7b594211edbbf1b88a60aec5d0 None Message(publisher_name=None, topic='parent/child', value='my message', previous_value=None, created=datetime.datetime(2022, 10, 31, 17, 33, 49, 609258, tzinfo=datetime.timezone.utc), message_id='0000172337ca6d062cd82792ba09504c')
+
+1667237629.7112095 callback 2e31cc7b594211edbbf1b88a60aec5d0 None Message(publisher_name=None, topic='parent/chipmunk', value='my message', previous_value='banana', created=datetime.datetime(2022, 10, 31, 17, 33, 49, 711209, tzinfo=datetime.timezone.utc), message_id='0000172337ca7319d480c8a36afc5827') 
 ```
